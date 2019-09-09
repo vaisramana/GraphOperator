@@ -6,6 +6,7 @@ from __future__ import print_function
 import sys
 import os
 import tensorflow as tf
+from tensorflow.contrib.quantize.python import quant_ops
 from google.protobuf import text_format
 import numpy as np
 import imageio
@@ -45,9 +46,19 @@ class model:
         assert(self._graph_def != None)
 
 
-    def write_pbtxt(self):
-        print("write pbtxt to %s.pbtxt" %self._filename)
-        tf.io.write_graph(self._graph_def, './', self._filename+".pbtxt", as_text=True)
+    def import_graph_def(self):
+        tf.reset_default_graph()
+        tf.import_graph_def(self._graph_def, name='')
+
+
+    def write_pbtxt(self, is_quant=False):
+        if is_quant:
+            filename = self._filename + "_quant.pbtxt"
+            tf.io.write_graph(self._quant_graph_def, './', filename, as_text=True)
+        else:
+            filename = self._filename + ".pbtxt"
+            tf.io.write_graph(self._graph_def, './', filename, as_text=True)
+        print("write pbtxt to %s" %filename)
     
 
     def write_pb(self):
@@ -57,13 +68,12 @@ class model:
 
     def write_summary(self):
         graph = tf.compat.v1.get_default_graph()
-        tf.import_graph_def(self._graph_def, name='')
         print("write summary to log\nTo visilize model: python3 -m tensorboard.main --logdir=./log")
         summaryWriter = tf.compat.v1.summary.FileWriter('log/', graph)
 
 
     def inference(self, input_tensor_name_list, input_data_list, trace_tensor_name_list):
-        tf.import_graph_def(self._graph_def, name='')
+        #tf.import_graph_def(self._graph_def, name='')
         with tf.Session() as sess:
             init = tf.global_variables_initializer()
             sess.run(init)
@@ -90,11 +100,53 @@ class model:
             return outputs        
 
 
+    def get_conv2d_info(self):
+        conv2d_node_dict = {}
+        with tf.Session() as sess:
+            for node in sess.graph_def.node:
+                if node.op == "Conv2D":
+
+                    if len(node.input) != 2:
+                        raise Exception("unexpected input number")
+                    weight_found = False
+                    weight_idx = -1
+                    for idx,input in enumerate(node.input):
+                        if "weights/read" in input:
+                            weight_found = True
+                            weight_idx = idx
+                    if weight_found:
+                        conv2d_node_dict[node.name] = [node.input[weight_idx], node.input[1-weight_idx]]
+                    else:
+                        raise Exception("weight not found")
+        
+
+        return conv2d_node_dict
+
+
+    def add_fake_quant(self, name):
+       node = self._quant_graph_def.node.add()
+       node.op = "FakeQuant" 
+       node.name = name
+       return node
+
+
 
     def quantize(self):
-        target_tensor_name = "CifarNet/conv1/weights/read:0"
-        
-        
+        self._quant_graph_def = tf.GraphDef()
+        conv2d_node_dict = self.get_conv2d_info()
+        with tf.Session() as sess:
+            for node in sess.graph_def.node:
+               if node.name in conv2d_node_dict.keys():
+                   self.add_fake_quant(conv2d_node_dict[node.name][1]+"/quant_input")
+                   self.add_fake_quant(conv2d_node_dict[node.name][0]+"/quant_weight")
+                   new_node = self._quant_graph_def.node.add()
+                   new_node.CopyFrom(node)
+
+               else:
+                   new_node = self._quant_graph_def.node.add()
+                   new_node.CopyFrom(node)
+                    
+        print(conv2d_node_dict)
 
 
 
@@ -102,6 +154,7 @@ if __name__ == '__main__':
     input_model = sys.argv[1]
     #convert_pb_to_pbtxt(input_model)
     m = model(input_model)
+    m.import_graph_def()
     #m.write_pbtxt()
     #m.write_summary()
 
@@ -110,7 +163,6 @@ if __name__ == '__main__':
     #target_tensor = m.get_tensor_by_name("postprobs:0")
     #tf.add(target_tensor, const_value, name="FakeAdd")
     #m._graph_def = tf.compat.v1.get_default_graph().as_graph_def()
-    #m.write_pbtxt()
      
 
     # test cifar
@@ -125,6 +177,8 @@ if __name__ == '__main__':
         print("%s\n%r" %(tensor, data))
 
 
+    m.quantize()
+    m.write_pbtxt(is_quant=True)
 
     
     
