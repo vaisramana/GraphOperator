@@ -166,6 +166,14 @@ class model:
                         narrow_range=True,
                         num_bits=quant_bits,
                         name_prefix="Weights")
+            target_input_tensor_name = "CifarNet/conv1/weights:0"
+            target_weight_tensor = sess.graph.get_tensor_by_name(target_weight_tensor_name)
+            target_weight_tensor_quant = quant_ops.LastValueQuantize(
+                        target_weight_tensor,
+                        is_training=is_training,
+                        narrow_range=True,
+                        num_bits=quant_bits,
+                        name_prefix="Weights")
             
             trace_tensor_list.append(target_weight_tensor)
             trace_tensor_list.append(target_weight_tensor_quant)
@@ -216,25 +224,20 @@ class model:
                     
                     # modified input
                     pad_node = new_graph_def.node.add()
-                    pad_node.op = node.op 
-                    pad_node.name = node.name 
-                    pad_node.device = node.device
-                    pad_node.attr['T'].type = node.attr['T'].type
-                    pad_node.attr['Tpaddings'].type = node.attr['Tpaddings'].type
+                    pad_node.CopyFrom(node)
+                    pad_node.ClearField("input")
 
                     assert(len(node.input)==2)
                     is_target_input_found = False
-                    keep_input_tensor = None
                     for i in node.input:
                         if i == "fifo_queue_DequeueMany":
                             is_target_input_found = True
+                            pad_node.input.extend([placeholder_node.name])
                         else:
-                            keep_input_tensor = i
+                            pad_node.input.extend([i])
                     if not is_target_input_found:
                         assert(0)
 
-                    pad_node.input.extend([placeholder_node.name])
-                    pad_node.input.extend([keep_input_tensor])
                     
                 else:
                     new_node = new_graph_def.node.add()
