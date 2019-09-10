@@ -141,6 +141,27 @@ class model:
     def inference_quant(self, input_tensor_name_list, input_data_list, trace_tensor_name_list):
         #tf.import_graph_def(self._graph_def, name='')
         with tf.Session() as sess:
+
+            # insert quant ops
+            quant_bits = 8
+            is_training = True
+            target_weight_tensor_name = "CifarNet/conv1/weights:0"
+            target_weight_tensor = sess.graph.get_tensor_by_name(target_weight_tensor_name)
+            target_weight_tensor_quant = quant_ops.LastValueQuantize(
+                        target_weight_tensor,
+                        is_training=is_training,
+                        narrow_range=True,
+                        num_bits=quant_bits,
+                        name_prefix=target_weight_tensor_name+"Weights")
+            target_input_tensor_name = "Placeholder:0"
+            target_input_tensor = sess.graph.get_tensor_by_name(target_input_tensor_name)
+            target_input_tensor_quant = quant_ops.MovingAvgQuantize(
+                        target_input_tensor,
+                        is_training=is_training,
+                        narrow_range=True,
+                        num_bits=quant_bits,
+                        name_prefix="Input")
+
             init = tf.global_variables_initializer()
             sess.run(init)
             
@@ -156,27 +177,11 @@ class model:
             for input_tensor,input_data in zip(input_tensor_list, input_data_list):
                 feed_dict[input_tensor] = input_data
             
-            quant_bits = 8
-            is_training = True
-            target_weight_tensor_name = "CifarNet/conv1/weights:0"
-            target_weight_tensor = sess.graph.get_tensor_by_name(target_weight_tensor_name)
-            target_weight_tensor_quant = quant_ops.LastValueQuantize(
-                        target_weight_tensor,
-                        is_training=is_training,
-                        narrow_range=True,
-                        num_bits=quant_bits,
-                        name_prefix="Weights")
-            target_input_tensor_name = "CifarNet/conv1/weights:0"
-            target_weight_tensor = sess.graph.get_tensor_by_name(target_weight_tensor_name)
-            target_weight_tensor_quant = quant_ops.LastValueQuantize(
-                        target_weight_tensor,
-                        is_training=is_training,
-                        narrow_range=True,
-                        num_bits=quant_bits,
-                        name_prefix="Weights")
             
             trace_tensor_list.append(target_weight_tensor)
             trace_tensor_list.append(target_weight_tensor_quant)
+            trace_tensor_list.append(target_input_tensor)
+            trace_tensor_list.append(target_input_tensor_quant)
 
             outputs = sess.run(trace_tensor_list,
                               feed_dict=feed_dict)
@@ -265,23 +270,23 @@ if __name__ == '__main__':
      
 
     # test cifar
-    #trace_tensor_list = ["CifarNet/Predictions/Reshape_1:0"]
-    #input_tensor_list = ["Placeholder:0"]
-    ##im = imageio.imread("../../../data/tmp/images/test_49_6.png")
+    trace_tensor_list = ["CifarNet/Predictions/Reshape_1:0"]
+    input_tensor_list = ["Placeholder:0"]
+    im = imageio.imread("../../../data/tmp/images/test_49_6.png")
     #im = imageio.imread(sys.argv[2])
-    #im = np.expand_dims(np.array(im), axis=0)
-    #input_data_list = [im]
-    ##outputs = m.inference(input_tensor_list, input_data_list, trace_tensor_list)
-    #outputs = m.inference_quant(input_tensor_list, input_data_list, trace_tensor_list)
+    im = np.expand_dims(np.array(im), axis=0)
+    input_data_list = [im]
+    #outputs = m.inference(input_tensor_list, input_data_list, trace_tensor_list)
+    outputs = m.inference_quant(input_tensor_list, input_data_list, trace_tensor_list)
 
 
 
     # test glass 
-    trace_tensor_list = ["pre_fc1_285_2/Reshape_1:0"]
-    input_tensor_list = ["image_in:0"]
-    im = np.ones([1,112,112,1])
-    input_data_list = [im]
-    outputs = m.inference(input_tensor_list, input_data_list, trace_tensor_list)
+    #trace_tensor_list = ["pre_fc1_285_2/Reshape_1:0"]
+    #input_tensor_list = ["image_in:0"]
+    #im = np.ones([1,112,112,1])
+    #input_data_list = [im]
+    #outputs = m.inference(input_tensor_list, input_data_list, trace_tensor_list)
 
 
 
