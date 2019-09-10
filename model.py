@@ -103,6 +103,8 @@ class model:
                 print("inference error")
                 assert(0)
 
+            for tensor,data in zip(trace_tensor_list,outputs):
+                print("%s\n%r" %(tensor, data))
             return outputs        
 
 
@@ -274,7 +276,7 @@ if __name__ == '__main__':
     # test glass 
     trace_tensor_list = ["pre_fc1_285_2/Reshape_1:0"]
     input_tensor_list = ["image_in:0"]
-    im = np.ones([112,112])
+    im = np.ones([1,112,112,1])
     input_data_list = [im]
     outputs = m.inference(input_tensor_list, input_data_list, trace_tensor_list)
 
